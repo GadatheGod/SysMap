@@ -72,7 +72,7 @@ pip install sysmap
 
 ```bash
 # Clone the repository
-git clone https://github.com/praveen/sysmap.git
+git clone https://github.com/GadatheGod/sysmap.git
 cd sysmap
 
 # Install the package
