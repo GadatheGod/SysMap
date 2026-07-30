@@ -1,0 +1,221 @@
+Metadata-Version: 2.4
+Name: sysmap
+Version: 0.1.0
+Summary: Complete system profiler - captures all hardware/software info and generates beautiful reports
+License: MIT
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: psutil>=5.9.0
+Requires-Dist: py-cpuinfo>=9.0.0
+Requires-Dist: pynvml>=11.5.0
+Requires-Dist: pyudev>=0.24.1
+Requires-Dist: pillow>=10.0.0
+Requires-Dist: jinja2>=3.1.0
+Requires-Dist: fastapi>=0.104.0
+Requires-Dist: uvicorn>=0.24.0
+Requires-Dist: pydantic>=2.5.0
+Requires-Dist: httpx>=0.25.0
+Requires-Dist: python-multipart>=0.0.6
+Requires-Dist: screeninfo>=0.8.1
+Provides-Extra: pdf
+Requires-Dist: weasyprint>=61.0; extra == "pdf"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+Requires-Dist: mypy>=1.8.0; extra == "dev"
+
+# SysMap - Complete System Profiler
+
+Capture all hardware and software information from your system and generate beautiful reports. Like HWiNFO + GPU-Z + dxdiag combined.
+
+## Features
+
+- **Comprehensive Data Collection**: CPU, RAM, GPU, storage, network, USB, Bluetooth, sensors, battery, wireless, PCI devices, and more
+- **Cross-Platform**: Works on Linux, Windows, and macOS
+- **Interactive Dashboard**: Beautiful React-based web interface
+- **Report Generation**: Export to HTML, PDF, or JSON
+- **CLI Tool**: Quick system info from terminal
+
+## Installation
+
+```bash
+pip install sysmap
+```
+
+Or from source:
+
+```bash
+cd sysmap
+pip install -e .
+```
+
+## Usage
+
+### Quick System Summary
+```bash
+sysmap info
+```
+
+### Launch Web Dashboard
+```bash
+sysmap server
+```
+Opens http://localhost:8000 in your browser.
+
+### Generate HTML Report
+```bash
+sysmap report
+```
+
+### Generate PDF Report
+```bash
+sysmap report --pdf
+```
+
+### Generate JSON Export
+```bash
+sysmap report --json
+```
+
+### Custom Output Path
+```bash
+sysmap report -o my_report.html
+```
+
+### Export Raw JSON
+```bash
+sysmap export-json -o system_data.json
+```
+
+## Data Collected
+
+### System Information
+- Manufacturer, model, serial number, SKU, UUID
+- Motherboard details, BIOS/UEFI info
+- Chassis type, SMBIOS version
+
+### CPU
+- Name, manufacturer, cores, threads
+- Clock speeds (base, boost, per-core)
+- Cache (L1/L2/L3), TDP
+- Instruction extensions, virtualization support
+- Per-core utilization and temperature
+
+### Memory
+- Total/available physical RAM
+- Swap space, virtual memory
+- Memory type, speed, voltage
+- Slot information, ECC support
+
+### GPU
+- Name, architecture, VRAM, bus width
+- Driver version, DirectX/OpenGL/Vulkan versions
+- CUDA cores/stream processors
+- Temperature, power draw, fan speed
+- PCIe interface details
+
+### Storage
+- Disk models, capacities, interfaces
+- SMART health, temperature, power-on hours
+- Partitions, filesystems, mount points
+- Usage percentages
+
+### Network
+- All adapters (Ethernet, WiFi, etc.)
+- IP addresses, MAC addresses, DNS
+- Speed, duplex, MTU
+- I/O statistics
+
+### USB
+- All connected devices with vendor/product IDs
+- USB controllers
+- Speed, class, driver info
+
+### Sensors
+- CPU/GPU/disk temperatures
+- Fan speeds (RPM)
+- Voltages (Vcore, +12V, +5V, +3.3V)
+- Power readings
+
+### OS & Security
+- OS version, kernel, architecture
+- TPM, Secure Boot, BitLocker
+- Firewall, antivirus status
+- Virtualization (Docker, Kubernetes, WSL, Hyper-V)
+
+### And much more!
+- Bluetooth devices, audio devices
+- PCI/PCIe devices, wireless adapters
+- Battery info (laptops), cooling systems
+- Installed software, running processes
+
+## Architecture
+
+```
+sysmap/
+├── collector/          # Cross-platform data collection engine
+│   ├── models.py       # Pydantic data models
+│   ├── shared.py       # Shared utilities
+│   ├── platform_linux.py
+│   ├── platform_windows.py
+│   ├── platform_mac.py
+│   └── __init__.py
+├── server/             # FastAPI backend
+│   ├── app.py          # API server
+│   ├── export_html.py  # HTML report generator
+│   └── export_pdf.py   # PDF report generator
+├── frontend/           # React dashboard
+│   └── src/
+├── cli.py              # CLI entry point
+└── pyproject.toml
+```
+
+## API Endpoints
+
+The server exposes REST API endpoints at `/api/`:
+
+- `GET /api/snapshot` - Complete system snapshot
+- `GET /api/summary` - Quick summary
+- `GET /api/cpu` - CPU info
+- `GET /api/memory` - Memory info
+- `GET /api/gpus` - GPU info
+- `GET /api/disks` - Disk info
+- `GET /api/partitions` - Partition info
+- `GET /api/network` - Network info
+- `GET /api/sensors` - Sensor readings
+- `GET /api/system` - System info
+- `GET /api/os` - OS info
+- `GET /api/security` - Security info
+- `GET /api/virtualization` - Virtualization info
+- `GET /api/usb` - USB devices
+- `GET /api/processes` - Running processes
+- `GET /api/monitors` - Monitor info
+- `GET /api/battery` - Battery info
+- `GET /api/bluetooth` - Bluetooth info
+- `GET /api/audio` - Audio devices
+- `GET /api/pci` - PCI devices
+- `GET /api/wireless` - Wireless info
+- `GET /api/cooling` - Cooling info
+- `GET /api/software` - Installed software
+- `GET /api/services` - Services
+- `GET /api/export/json` - Export full snapshot as JSON
+
+## Development
+
+```bash
+# Install in development mode
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Lint
+ruff check .
+
+# Type check
+mypy .
+```
+
+## License
+
+MIT
