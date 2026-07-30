@@ -275,6 +275,22 @@ ruff check .
 mypy .
 ```
 
+## Credits & References
+
+SysMap was inspired by and draws concepts from these excellent tools:
+
+- **[HWiNFO](https://www.hwinfo.com/)** — Comprehensive system information and monitoring (sensor data, hardware details, real-time monitoring)
+- **[GPU-Z](https://www.techpowerup.com/gpuz/)** — GPU information utility (VRAM details, GPU-Z style GPU specs, driver info)
+- **[dxdiag](https://support.microsoft.com/en-us/windows/directx-diagnostic-tool-dxdiag-help-d214059e-6e34-3985-a765-d1a41c02a22d)** — DirectX diagnostic tool (system info, display, sound, network details)
+- **[lshw](https://linux-hardware.org/)** — Linux hardware lister (hardware detection methodology)
+- **[system_profiler](https://developer.apple.com/documentation/technologies/macos_accessories/system_profiler)** — macOS system profiler (macOS data collection)
+- **[psutil](https://github.com/giampaolo/psutil)** — Cross-platform process and system monitoring library
+- **[py-cpuinfo](https://github.com/workhorsy/py-cpuinfo)** — CPU information detection library
+- **[pynvml](https://github.com/NVIDIA/pyNVML)** — NVIDIA Management Library Python bindings
+- **[lm-sensors](https://www.lm-sensors.org/)** — Linux hardware sensor monitoring (sensor data structure)
+
+Special thanks to the open-source community for making these tools and libraries available.
+
 ## License
 
 MIT License - Developed by Praveen
