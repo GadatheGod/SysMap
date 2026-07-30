@@ -333,8 +333,8 @@ async def export_json():
 async def export_pdf():
     """Export full snapshot as PDF."""
     try:
-        from server.export_html import generate_html_report
-        from server.export_pdf import generate_pdf_report
+        from sysmap.server.export_html import generate_html_report
+        from sysmap.server.export_pdf import generate_pdf_report
         import tempfile
 
         snapshot = collect_all()

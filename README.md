@@ -75,7 +75,12 @@ pip install sysmap
 git clone https://github.com/GadatheGod/sysmap.git
 cd sysmap
 
-# Install the package
+pip install -e . --break-system-packages
+
+# Or use a virtual environment (recommended):
+# python3 -m venv venv
+# source venv/bin/activate
+# pip install -e .
 pip install -e .
 
 # For PDF support
