@@ -10,9 +10,9 @@
 
 ## Screenshots
 
-![SysMap Dashboard](https://raw.githubusercontent.com/praveen/sysmap/main/screenshots/dashboard.png)
-![SysMap System Info](https://raw.githubusercontent.com/praveen/sysmap/main/screenshots/system.png)
-![SysMap Storage](https://raw.githubusercontent.com/praveen/sysmap/main/screenshots/storage.png)
+![SysMap Dashboard](https://raw.githubusercontent.com/GadatheGod/SysMap/main/screenshots/dashboard.png)
+![SysMap System Info](https://raw.githubusercontent.com/GadatheGod/SysMap/main/screenshots/system.png)
+![SysMap Storage](https://raw.githubusercontent.com/GadatheGod/SysMap/main/screenshots/storage.png)
 
 ## What is SysMap and How is it Useful?
 
