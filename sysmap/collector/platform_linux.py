@@ -66,59 +66,87 @@ def get_system_info() -> SystemInfo:
 
 def get_gpus() -> List[GpuInfo]:
     gpus = []
+    seen_names = set()
 
-    # Try NVIDIA via NVML
+    # NVIDIA via NVML
     try:
         import pynvml
-        pynvml.nvmlInit()
-        device_count = pynvml.nvmlDeviceGetCount()
-        for i in range(device_count):
-            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-            gpu = GpuInfo()
-            gpu.name = pynvml.nvmlDeviceGetName(handle)
-            gpu.architecture = "NVIDIA"
-            gpu.driver_version = pynvml.nvmlSystemGetDriverVersion()
-            gpu.vram_bytes = pynvml.nvmlDeviceGetMemoryInfo(handle).total
-            gpu.vram_type = "GDDR"  # Simplified
-            gpu.temperature_c = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
-            gpu.power_draw_w = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0
-            gpu.power_limit_w = pynvml.nvmlDeviceGetEnforcedPowerLimit(handle) / 1000.0
-            gpu.fan_speed_pct = pynvml.nvmlDeviceGetFanSpeed(handle)
-            gpu.cuda_cores = pynvml.nvmlDeviceGetCudaComputeCapability(handle)[0] if pynvml.nvmlDeviceGetCudaComputeCapability(handle) else 0
-            gpu.pci_vendor_id = hex(pynvml.nvmlDeviceGetDeviceId(handle))
-            gpu.opencl_version = "OpenCL 3.0"
-            gpu.hardware_acceleration = True
-            gpus.append(gpu)
-        pynvml.nvmlShutdown()
+        try:
+            pynvml.nvmlInit()
+            device_count = pynvml.nvmlDeviceGetCount()
+            for i in range(device_count):
+                handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+                gpu = GpuInfo()
+                try:
+                    gpu.name = pynvml.nvmlDeviceGetName(handle)
+                except Exception:
+                    gpu.name = f"NVIDIA GPU {i}"
+                gpu.architecture = "NVIDIA"
+                gpu.driver_version = pynvml.nvmlSystemGetDriverVersion()
+                try:
+                    mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                    gpu.vram_bytes = mem_info.total
+                except Exception:
+                    pass
+                gpu.vram_type = "GDDR"
+                try:
+                    gpu.temperature_c = float(pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU))
+                except Exception:
+                    pass
+                try:
+                    gpu.power_draw_w = float(pynvml.nvmlDeviceGetPowerUsage(handle)) / 1000.0
+                except Exception:
+                    pass
+                try:
+                    gpu.power_limit_w = float(pynvml.nvmlDeviceGetEnforcedPowerLimit(handle)) / 1000.0
+                except Exception:
+                    pass
+                try:
+                    gpu.fan_speed_pct = float(pynvml.nvmlDeviceGetFanSpeed(handle))
+                except Exception:
+                    pass
+                gpu.pci_vendor_id = "0x10de"
+                gpu.opencl_version = "OpenCL 3.0"
+                gpu.hardware_acceleration = True
+                gpu.cuda_cores = 0
+                gpu.pci_generation = "4.0"
+                gpu.pci_interface = "PCIe"
+                if gpu.name not in seen_names:
+                    seen_names.add(gpu.name)
+                    gpus.append(gpu)
+            pynvml.nvmlShutdown()
+        except Exception:
+            pass
     except ImportError:
         pass
-    except Exception:
-        pass
 
-    # Fallback: parse lspci for all GPUs
-    lspci_output = run_cmd(['lspci'])
+    # lspci for additional GPUs (AMD/Intel)
+    lspci_output = run_cmd(['lspci', '-nnk', '-d', '::0300::'])
+    if not lspci_output:
+        lspci_output = run_cmd(['lspci', '-nnk'])
+
     if lspci_output:
-        for line in lspci_output.split('\n'):
-            if 'VGA' in line or '3D' in line or 'Display' in line or 'GPU' in line:
-                gpu = GpuInfo()
-                gpu.name = line.split(':')[-1].strip() if ':' in line else "Unknown GPU"
-                gpu.pci_interface = "PCIe"
-                gpu.hardware_acceleration = True
-                # Check if already added via NVML
-                if not any(g.name == gpu.name for g in gpus):
-                    gpus.append(gpu)
+        lines = lspci_output.split('\n')
+        for idx, line in enumerate(lines):
+            if re.match(r'^\d{2}:\d{2}\.', line):
+                if 'VGA' in line or '3D' in line or 'Display' in line:
+                    gpu = GpuInfo()
+                    parts = line.split(':')
+                    if len(parts) > 1:
+                        gpu.name = parts[-1].strip()
+                    gpu.pci_interface = "PCIe"
+                    gpu.hardware_acceleration = True
+                    gpu.pci_generation = "4.0"
 
-    # Try to get AMD GPU info
-    amd_output = run_cmd(['amdgpu', '--querygpu', 'name,driver,memory_total,vram_used,temp,clock_now'] if run_cmd(['which', 'amdgpu']) else ['rocm-smi', '--showallinfo'])
-    if amd_output:
-        for line in amd_output.split('\n'):
-            if 'gpu' in line.lower() and 'name' in line.lower():
-                gpu = GpuInfo()
-                gpu.name = line.split(':')[-1].strip() if ':' in line else "AMD GPU"
-                gpu.architecture = "AMD"
-                gpu.hardware_acceleration = True
-                if not any(g.name == gpu.name for g in gpus):
-                    gpus.append(gpu)
+                    for next_line in lines[idx+1:idx+4]:
+                        if 'Kernel driver' in next_line:
+                            gpu.driver_version = next_line.split(': ')[1].strip() if ': ' in next_line else ""
+                        if 'Kernel modules' in next_line:
+                            break
+
+                    if gpu.name and gpu.name not in seen_names:
+                        seen_names.add(gpu.name)
+                        gpus.append(gpu)
 
     return gpus
 
@@ -180,24 +208,25 @@ def get_monitors() -> List[MonitorInfo]:
 def get_disks() -> List[DiskInfo]:
     disks = []
 
-    # Get disk names from lsblk
-    lsblk = run_cmd(['lsblk', '-d', '-b', '-o', 'NAME,SIZE,MODEL,SERIAL,FIRMWARE,TRAN,ROTA,TYPE', '-J'])
+    # Get disk info from lsblk with simple columns
+    lsblk = run_cmd(['lsblk', '-b', '-o', 'NAME,SIZE,MODEL,SERIAL,TRAN,ROTA,TYPE', '-J'])
     if lsblk:
         try:
             data = __import__('json').loads(lsblk)
-            for disk in data.get('blockdevices', []):
-                if disk.get('type') == 'disk':
+            for dev in data.get('blockdevices', []):
+                if dev.get('type') == 'disk':
                     disk_info = DiskInfo()
-                    disk_info.name = f"/dev/{disk['name']}"
-                    disk_info.model = disk.get('model', '').strip()
-                    disk_info.manufacturer = ""
-                    disk_info.serial = disk.get('serial', '').strip()
-                    disk_info.firmware = disk.get('firmware', '').strip()
-                    disk_info.interface = disk.get('tran', '').upper() or "SATA"
-                    disk_info.capacity_bytes = disk.get('size', 0) or 0
-                    disk_info.form_factor = "2.5\"" if '2.5' in disk.get('model', '').lower() else "3.5\"" if '3.5' in disk.get('model', '').lower() else "M.2" if 'NVMe' in disk.get('model', '') else "Unknown"
-                    disk_info.rpm = 0 if disk.get('rota', True) else 0  # SSD
-                    disk_info.rpm = 5400 if disk.get('rota', True) else 0  # HDD default
+                    disk_info.name = f"/dev/{dev['name']}"
+                    disk_info.model = dev.get('model', '').strip() or 'Unknown'
+                    disk_info.serial = dev.get('serial', '').strip()
+                    tran = dev.get('tran', '').strip()
+                    disk_info.interface = tran.upper() if tran else "SATA"
+                    disk_info.capacity_bytes = dev.get('size', 0) or 0
+                    rota = dev.get('rota', 0)
+                    disk_info.rpm = 5400 if rota == 1 else 0
+                    disk_info.protocol = "NVMe" if 'nvme' in disk_info.name.lower() else "AHCI"
+                    disk_info.form_factor = "M.2" if 'nvme' in disk_info.name.lower() else "2.5\"" if disk_info.capacity_bytes < 500 * 1024**3 else "3.5\""
+                    disk_info.manufacturer = disk_info.model.split()[0] if disk_info.model else ""
                     disks.append(disk_info)
         except (json.JSONDecodeError, KeyError):
             pass
@@ -228,18 +257,18 @@ def get_disks() -> List[DiskInfo]:
             disk.health_status = "UNKNOWN"
 
         # Get NVMe specific attributes
-        if 'NVMe' in disk.name or 'nvme' in disk.name:
+        if 'nvme' in disk.name.lower():
             nvme_output = run_cmd(['sudo', 'nvme', 'smart-log', disk.name.replace('/dev/', '')])
             if nvme_output:
                 for line in nvme_output.split('\n'):
                     if 'temperature' in line.lower():
                         temp_match = re.search(r'(\d+)', line)
                         if temp_match:
-                            disk.temperature_c = float(temp_match.group(1)) - 273.15  # Kelvin to Celsius
+                            disk.temperature_c = float(temp_match.group(1)) - 273.15
                     if 'data_units' in line.lower():
                         units_match = re.search(r'(\d+)', line)
                         if units_match:
-                            disk.power_on_hours = int(units_match.group(1)) * 30 // 3600  # Rough estimate
+                            disk.power_on_hours = int(units_match.group(1)) * 30 // 3600
 
     return disks
 

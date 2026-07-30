@@ -1,6 +1,7 @@
 """FastAPI server for sysmap."""
 
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -27,6 +28,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -35,11 +38,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serve frontend static assets
+app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
+
 
 @app.get("/")
 async def dashboard():
     """Serve the React dashboard."""
-    frontend_dir = Path(__file__).parent.parent / "frontend" / "dist"
+    frontend_dir = Path(__file__).parent.parent.parent / "frontend" / "dist"
     index_html = frontend_dir / "index.html"
 
     if index_html.exists():
@@ -321,3 +327,253 @@ async def export_json():
         return FileResponse(path, media_type='application/json', filename='sysmap_report.json')
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/export/pdf")
+async def export_pdf():
+    """Export full snapshot as PDF."""
+    try:
+        from server.export_html import generate_html_report
+        from server.export_pdf import generate_pdf_report
+        import tempfile
+
+        snapshot = collect_all()
+        fd_html, html_path = tempfile.mkstemp(suffix='.html')
+        os.close(fd_html)
+        generate_html_report(snapshot, html_path)
+
+        fd_pdf, pdf_path = tempfile.mkstemp(suffix='.pdf')
+        os.close(fd_pdf)
+        generate_pdf_report(pdf_path, html_path)
+
+        # Clean up HTML
+        try:
+            os.unlink(html_path)
+        except Exception:
+            pass
+
+        return FileResponse(pdf_path, media_type='application/pdf', filename='sysmap_report.pdf')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF export failed: {str(e)}")
+
+
+@app.get("/api/export/md")
+async def export_md():
+    """Export full snapshot as Markdown."""
+    try:
+        snapshot = collect_all()
+
+        md = generate_markdown(snapshot)
+
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix='.md')
+        with os.fdopen(fd, 'w') as f:
+            f.write(md)
+
+        return FileResponse(path, media_type='text/markdown', filename='sysmap_report.md')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Markdown export failed: {str(e)}")
+
+
+def generate_markdown(snapshot) -> str:
+    """Generate a Markdown report from snapshot data."""
+    lines = []
+    lines.append("# SysMap System Report")
+    lines.append("")
+    lines.append(f"**Generated:** {snapshot.timestamp}")
+    lines.append(f"**Platform:** {snapshot.platform}")
+    lines.append(f"**Hostname:** {snapshot.os_info.hostname}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # System
+    lines.append("## System Information")
+    lines.append("")
+    lines.append(f"- **Manufacturer:** {snapshot.system.manufacturer or 'N/A'}")
+    lines.append(f"- **Model:** {snapshot.system.model or 'N/A'}")
+    lines.append(f"- **Serial Number:** {snapshot.system.serial or 'N/A'}")
+    lines.append(f"- **Motherboard:** {snapshot.system.motherboard_model or 'N/A'}")
+    lines.append(f"- **BIOS Vendor:** {snapshot.system.bios_vendor or 'N/A'}")
+    lines.append(f"- **BIOS Version:** {snapshot.system.bios_version or 'N/A'}")
+    lines.append(f"- **BIOS Date:** {snapshot.system.bios_date or 'N/A'}")
+    lines.append(f"- **UEFI Mode:** {'Yes' if snapshot.system.uefi_mode else 'No'}")
+    lines.append(f"- **Chassis Type:** {snapshot.system.chassis_type or 'N/A'}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # CPU
+    lines.append("## CPU")
+    lines.append("")
+    lines.append(f"- **Name:** {snapshot.cpu.name or 'N/A'}")
+    lines.append(f"- **Manufacturer:** {snapshot.cpu.manufacturer or 'N/A'}")
+    lines.append(f"- **Physical Cores:** {snapshot.cpu.physical_cores}")
+    lines.append(f"- **Logical Cores / Threads:** {snapshot.cpu.logical_cores} / {snapshot.cpu.threads}")
+    lines.append(f"- **Base Clock:** {(snapshot.cpu.base_clock_mhz / 1000):.2f} GHz")
+    lines.append(f"- **Boost Clock:** {(snapshot.cpu.boost_clock_mhz / 1000):.2f} GHz")
+    lines.append(f"- **L1 Cache:** {snapshot.cpu.l1_cache_kb} KB")
+    lines.append(f"- **L2 Cache:** {snapshot.cpu.l2_cache_kb} KB")
+    lines.append(f"- **L3 Cache:** {snapshot.cpu.l3_cache_kb} KB")
+    lines.append(f"- **TDP:** {snapshot.cpu.tdp_watts:.0f} W")
+    lines.append(f"- **Virtualization:** {'Yes' if snapshot.cpu.virtualization else 'No'}")
+    lines.append(f"- **Extensions:** {', '.join(snapshot.cpu.extensions[:10]) or 'N/A'}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Memory
+    lines.append("## Memory")
+    lines.append("")
+    lines.append(f"- **Total Physical RAM:** {format_bytes(snapshot.memory.total_physical_bytes)}")
+    lines.append(f"- **Available Physical RAM:** {format_bytes(snapshot.memory.available_physical_bytes)}")
+    lines.append(f"- **Total Virtual Memory:** {format_bytes(snapshot.memory.total_virtual_bytes)}")
+    lines.append(f"- **Total Swap:** {format_bytes(snapshot.memory.total_swap_bytes)}")
+    lines.append(f"- **Memory Type:** {snapshot.memory.memory_type or 'N/A'}")
+    lines.append(f"- **Memory Speed:** {snapshot.memory.memory_speed_mts} MT/s")
+    lines.append(f"- **ECC Supported:** {'Yes' if snapshot.memory.ecc_supported else 'No'}")
+    lines.append(f"- **Memory Slots:** {snapshot.memory.slots_used} / {snapshot.memory.slots_total}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # GPUs
+    for gpu in snapshot.gpus:
+        lines.append("## GPU")
+        lines.append("")
+        lines.append(f"### {gpu.name}")
+        lines.append("")
+        lines.append(f"- **Architecture:** {gpu.architecture or 'N/A'}")
+        lines.append(f"- **VRAM:** {format_bytes(gpu.vram_bytes)} {gpu.vram_type}")
+        lines.append(f"- **VRAM Speed:** {gpu.vram_speed_mts} MT/s")
+        lines.append(f"- **Bus Width:** {gpu.vram_bus_width} bit")
+        lines.append(f"- **Driver Version:** {gpu.driver_version or 'N/A'}")
+        lines.append(f"- **DirectX:** {gpu.directx_version or 'N/A'}")
+        lines.append(f"- **OpenGL:** {gpu.opengl_version or 'N/A'}")
+        lines.append(f"- **Vulkan:** {gpu.vulkan_version or 'N/A'}")
+        lines.append(f"- **CUDA Cores:** {gpu.cuda_cores or 'N/A'}")
+        lines.append(f"- **PCIe Interface:** {gpu.pci_interface} {gpu.pci_generation}")
+        if gpu.temperature_c > 0:
+            lines.append(f"- **Temperature:** {gpu.temperature_c:.0f} °C")
+        if gpu.power_draw_w > 0:
+            lines.append(f"- **Power Draw:** {gpu.power_draw_w:.1f} W")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+    # Storage
+    lines.append("## Storage")
+    lines.append("")
+    for disk in snapshot.disks:
+        lines.append(f"### {disk.model or 'Unknown'}")
+        lines.append("")
+        lines.append(f"- **Device:** `{disk.name}`")
+        lines.append(f"- **Capacity:** {format_bytes(disk.capacity_bytes)}")
+        lines.append(f"- **Interface:** {disk.interface} {disk.protocol}")
+        if disk.temperature_c > 0:
+            lines.append(f"- **Temperature:** {disk.temperature_c:.0f} °C")
+        if disk.health_status:
+            lines.append(f"- **SMART Health:** {disk.health_status}")
+        if disk.power_on_hours > 0:
+            lines.append(f"- **Power-On Hours:** {disk.power_on_hours}")
+        lines.append("")
+
+    if not snapshot.disks:
+        lines.append("No storage devices detected.")
+        lines.append("")
+
+    lines.append("---")
+    lines.append("")
+
+    # Partitions
+    lines.append("## Partitions & Filesystems")
+    lines.append("")
+    if snapshot.partitions:
+        lines.append("| Device | Mount Point | Filesystem | Total | Used | Free | Usage |")
+        lines.append("|--------|-------------|------------|-------|------|------|-------|")
+        for part in snapshot.partitions:
+            lines.append(f"| `{part.name}` | {part.mount_point or 'N/A'} | {part.filesystem} | {format_bytes(part.size_bytes)} | {format_bytes(part.used_bytes)} | {format_bytes(part.free_bytes)} | {part.usage_percent:.0f}% |")
+    else:
+        lines.append("No partitions detected.")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Network
+    lines.append("## Network Adapters")
+    lines.append("")
+    for adapter in snapshot.network_adapters:
+        lines.append(f"### {adapter.name}")
+        lines.append("")
+        lines.append(f"- **Type:** {adapter.adapter_type}")
+        lines.append(f"- **MAC:** `{adapter.mac_address or 'N/A'}`")
+        lines.append(f"- **IPv4:** `{adapter.ipv4_address or 'N/A'}`")
+        if adapter.speed_mbps > 0:
+            lines.append(f"- **Speed:** {adapter.speed_mbps} Mbps")
+        lines.append(f"- **State:** {adapter.connection_state}")
+        lines.append("")
+
+    lines.append("---")
+    lines.append("")
+
+    # OS
+    lines.append("## Operating System")
+    lines.append("")
+    lines.append(f"- **Hostname:** {snapshot.os_info.hostname}")
+    lines.append(f"- **Platform:** {snapshot.os_info.platform}")
+    lines.append(f"- **Kernel:** {snapshot.os_info.kernel_version}")
+    lines.append(f"- **Architecture:** {snapshot.os_info.architecture}")
+    lines.append(f"- **Language:** {snapshot.os_info.language or 'N/A'}")
+    lines.append(f"- **Locale:** {snapshot.os_info.locale or 'N/A'}")
+    lines.append(f"- **Timezone:** {snapshot.os_info.timezone}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Security
+    lines.append("## Security")
+    lines.append("")
+    lines.append(f"- **TPM:** {snapshot.security.tpm_version if snapshot.security.tpm_present else 'Not Found'}")
+    lines.append(f"- **Secure Boot:** {snapshot.security.secure_boot or 'Unknown'}")
+    lines.append(f"- **Firewall:** {'Enabled' if snapshot.security.firewall_enabled else 'Disabled'}")
+    lines.append(f"- **Antivirus:** {snapshot.security.antivirus_name or 'None'}")
+    lines.append(f"- **BitLocker:** {snapshot.security.bitlocker_status or 'N/A'}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Virtualization
+    lines.append("## Virtualization & Containers")
+    lines.append("")
+    lines.append(f"- **Docker:** {'Yes' if snapshot.virtualization.docker_installed else 'No'}")
+    lines.append(f"- **Kubernetes:** {'Yes' if snapshot.virtualization.kubernetes_installed else 'No'}")
+    lines.append(f"- **WSL:** {'Yes' if snapshot.virtualization.wsl_installed else 'No'}")
+    lines.append(f"- **Hyper-V:** {'Enabled' if snapshot.virtualization.hyper_v_enabled else 'Disabled'}")
+    lines.append(f"- **VM Detected:** {snapshot.virtualization.vm_host or 'No'}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Processes
+    lines.append("## Top Processes")
+    lines.append("")
+    lines.append(f"Total processes: {snapshot.total_processes}")
+    lines.append("")
+    if snapshot.processes:
+        lines.append("| PID | Name | User | CPU % | Memory | Status |")
+        lines.append("|-----|------|------|-------|--------|--------|")
+        for proc in snapshot.processes:
+            lines.append(f"| {proc.pid} | {proc.name} | {proc.user} | {proc.cpu_percent:.1f}% | {format_bytes(proc.memory_bytes)} | {proc.status} |")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def format_bytes(bytes_val):
+    """Format bytes to human readable string."""
+    if bytes_val == 0:
+        return "0 B"
+    k = 1024
+    sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    i = int(math.log(bytes_val) / math.log(k))
+    return f"{bytes_val / (k ** i):.1f} {sizes[i]}"
